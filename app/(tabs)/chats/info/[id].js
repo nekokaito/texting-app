@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -19,6 +18,7 @@ import {
 } from "react-native-paper";
 
 import { API_URL } from "../../../../constants/API";
+import { getItem } from "../../../../utils/storage";
 
 export default function ChatInfoPage() {
   const { id } = useLocalSearchParams();
@@ -45,7 +45,7 @@ export default function ChatInfoPage() {
       setLoading(true);
       setError(null);
 
-      const storedSession = await SecureStore.getItemAsync("user_session");
+      const storedSession = await getItem("user_session");
 
       if (!storedSession) {
         setError("Your session has expired. Please sign in again.");

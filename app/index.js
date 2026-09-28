@@ -1,10 +1,8 @@
 import { Redirect } from "expo-router";
-
 import { useEffect, useState } from "react";
-
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import * as SecureStore from "expo-secure-store";
+import { getItem } from "../utils/storage";
 
 const SESSION_KEY = "user_session";
 
@@ -18,7 +16,7 @@ export default function Index() {
 
   const checkSession = async () => {
     try {
-      const session = await SecureStore.getItemAsync(SESSION_KEY);
+      const session = await getItem(SESSION_KEY);
 
       if (session) {
         setHasSession(true);

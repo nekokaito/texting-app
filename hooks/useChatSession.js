@@ -1,7 +1,5 @@
-import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
-
-const SESSION_KEY = "user_session";
+import { getItem } from "../utils/storage";
 
 export function useChatSession() {
   const [token, setToken] = useState(null);
@@ -14,23 +12,17 @@ export function useChatSession() {
 
     const loadSession = async () => {
       try {
-        const storedSession = await SecureStore.getItemAsync(SESSION_KEY);
+        const storedSession = await getItem("user_session");
 
         if (!storedSession) {
-          throw new Error(
-            "Your session has expired. Please sign in again.",
-          );
+          throw new Error("Your session has expired. Please sign in again.");
         }
 
         const session = JSON.parse(storedSession);
         const user = session.user || {};
 
         const userId =
-          user.userId ??
-          user.USER_ID ??
-          user.user_id ??
-          user.id ??
-          null;
+          user.userId ?? user.USER_ID ?? user.user_id ?? user.id ?? null;
 
         if (!session.token) {
           throw new Error("No authentication token was found.");

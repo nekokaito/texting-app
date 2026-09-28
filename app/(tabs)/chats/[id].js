@@ -92,6 +92,7 @@ export default function ChatPage() {
         });
 
         const data = await response.json();
+        console.log("Chat info API response:", data);
 
         if (!response.ok) {
           throw new Error(

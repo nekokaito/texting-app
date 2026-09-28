@@ -5,7 +5,6 @@ import {
   requestPermissionsAsync,
 } from "expo-contacts";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -27,6 +26,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import { API_URL } from "../../../constants/API";
+import { getItem } from "../../../utils/storage";
 
 const SESSION_KEY = "user_session";
 
@@ -48,7 +48,7 @@ export default function ContactsPage() {
    * Get authentication token from existing session.
    */
   const getToken = async () => {
-    const session = await SecureStore.getItemAsync(SESSION_KEY);
+    const session = await getItem(SESSION_KEY);
 
     if (!session) {
       return null;

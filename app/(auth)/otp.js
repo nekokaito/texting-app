@@ -1,6 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+
 import { useEffect, useState } from "react";
+
 import {
   ActivityIndicator,
   Alert,
@@ -9,14 +10,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import {
   CodeField,
   Cursor,
   useBlurOnFulfill,
   useClearByFocusCell,
 } from "react-native-confirmation-code-field";
+
 import { useTheme } from "react-native-paper";
+
 import { API_URL } from "../../constants/API";
+import { saveItem } from "../../utils/storage";
 
 const CELL_COUNT = 6;
 const SESSION_KEY = "user_session";
@@ -31,9 +36,6 @@ export default function OTP() {
     profilePicture,
     password,
   } = useLocalSearchParams();
-
-  console.log(profilePicture);
-  console.log(email);
 
   const router = useRouter();
   const { colors } = useTheme();
@@ -72,7 +74,7 @@ export default function OTP() {
       user: data.user || null,
     };
 
-    await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
+    await saveItem(SESSION_KEY, JSON.stringify(session));
   };
 
   const verifyCode = async () => {

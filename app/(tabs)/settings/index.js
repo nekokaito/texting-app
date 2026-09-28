@@ -1,5 +1,4 @@
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -23,6 +22,7 @@ import {
 
 import { API_URL } from "../../../constants/API";
 import Colors from "../../../constants/Colors";
+import { getItem, removeItem } from "../../../utils/storage";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -39,7 +39,7 @@ export default function SettingsPage() {
     try {
       setProfileError("");
 
-      const sessionString = await SecureStore.getItemAsync("user_session");
+      const sessionString = await getItem("user_session");
 
       if (!sessionString) {
         setProfileError("Please log in to view your profile.");
@@ -105,7 +105,7 @@ export default function SettingsPage() {
   // Logout
   const handleLogout = async () => {
     try {
-      await SecureStore.deleteItemAsync("user_session");
+      await removeItem("user_session");
       setLogoutVisible(false);
       router.replace("/welcome");
     } catch (error) {

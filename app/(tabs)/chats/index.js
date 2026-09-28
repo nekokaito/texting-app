@@ -1,5 +1,4 @@
 import { Stack, useFocusEffect } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,6 +13,7 @@ import { useTheme } from "react-native-paper";
 import ChatRow from "../../../components/ChatRow";
 import { API_URL } from "../../../constants/API";
 import { defaultStyles } from "../../../constants/Styles";
+import { getItem } from "../../../utils/storage";
 
 const SESSION_KEY = "user_session";
 
@@ -34,7 +34,7 @@ export default function ChatIndex() {
       }
 
       // Retrieve the saved authentication session.
-      const sessionData = await SecureStore.getItemAsync(SESSION_KEY);
+      const sessionData = await getItem(SESSION_KEY);
 
       if (!sessionData) {
         throw new Error("Your session has expired. Please log in again.");

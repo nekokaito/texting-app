@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -22,6 +22,7 @@ import { getItem } from "../../../../utils/storage";
 
 export default function ChatInfoPage() {
   const { id } = useLocalSearchParams();
+  const router = useRouter();
   const theme = useTheme();
   const { colors } = theme;
 
@@ -96,46 +97,44 @@ export default function ChatInfoPage() {
 
       setChat(currentChat);
 
-      console.log("INFO CHAT:", currentChat);
-
       // ---------------------------------------------------------
-      // 3. Get the other user's ID
+      // 3. Fetch details conditionally based on CHAT_TYPE
       // ---------------------------------------------------------
 
-      const otherUserId = currentChat.OTHER_USER_ID;
+      const chatType = currentChat.CHAT_TYPE || "DIRECT";
 
-      if (!otherUserId) {
-        throw new Error("The other user's ID was not found.");
+      if (chatType === "DIRECT") {
+        const otherUserId = currentChat.OTHER_USER_ID;
+
+        if (!otherUserId) {
+          throw new Error("The other user's ID was not found.");
+        }
+
+        // Fetch complete profile of the other user
+        const userResponse = await fetch(`${API_URL}/api/user/${otherUserId}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        const userData = await userResponse.json();
+
+        if (!userResponse.ok) {
+          throw new Error(userData?.error || "Failed to load user information.");
+        }
+
+        if (!userData?.user) {
+          throw new Error("User information was not returned.");
+        }
+
+        setUser(userData.user);
+      } else {
+        // Group chat handling: Reset target user state as it's a group
+        setUser(null);
       }
-
-      // ---------------------------------------------------------
-      // 4. Get complete profile of the other user
-      // ---------------------------------------------------------
-
-      const userResponse = await fetch(`${API_URL}/api/user/${otherUserId}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      const userData = await userResponse.json();
-
-      if (!userResponse.ok) {
-        throw new Error(userData?.error || "Failed to load user information.");
-      }
-
-      if (!userData?.user) {
-        throw new Error("User information was not returned.");
-      }
-
-      setUser(userData.user);
-
-      console.log("INFO USER:", userData.user);
     } catch (err) {
-      console.error("Load Chat Info Error:", err);
-
       setError(err.message || "Failed to load chat information.");
     } finally {
       setLoading(false);
@@ -143,6 +142,10 @@ export default function ChatInfoPage() {
   }
 
   function getProfileImage() {
+    if (chat?.CHAT_TYPE === "GROUP") {
+      return null;
+    }
+
     if (user?.profilePicture) {
       return {
         uri: user.profilePicture,
@@ -156,6 +159,17 @@ export default function ChatInfoPage() {
     }
 
     return null;
+  }
+
+  function handleAddMembers() {
+    Alert.alert(
+      "Add Members",
+      "Navigate to member selection screen or open select user modal.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", onPress: () => {} },
+      ]
+    );
   }
 
   if (loading) {
@@ -201,7 +215,7 @@ export default function ChatInfoPage() {
     );
   }
 
-  if (error || !chat || !user) {
+  if (error || !chat) {
     return (
       <>
         <Stack.Screen
@@ -253,25 +267,29 @@ export default function ChatInfoPage() {
     );
   }
 
-  const displayName =
-    user.fullName ||
-    chat.DISPLAY_NAME ||
-    chat.OTHER_FULL_NAME ||
-    user.username ||
-    "Unknown User";
+  const isGroup = chat.CHAT_TYPE === "GROUP";
 
-  const username = user.username || chat.OTHER_USERNAME;
+  const displayName = isGroup
+    ? chat.TITLE || "Group Chat"
+    : user?.fullName ||
+      chat.DISPLAY_NAME ||
+      chat.OTHER_FULL_NAME ||
+      user?.username ||
+      "Unknown User";
 
-  const phoneNumber = user.phoneNumber || null;
-
-  const isOnline =
-    user.isOnline !== undefined ? user.isOnline : chat.OTHER_IS_ONLINE;
+  const username = isGroup ? null : user?.username || chat.OTHER_USERNAME;
+  const phoneNumber = isGroup ? null : user?.phoneNumber || null;
+  const isOnline = isGroup
+    ? false
+    : user?.isOnline !== undefined
+    ? user.isOnline
+    : chat.OTHER_IS_ONLINE;
 
   return (
     <>
       <Stack.Screen
         options={{
-          title: "Info",
+          title: isGroup ? "Group Info" : "Info",
           headerBackTitleVisible: false,
           headerStyle: {
             backgroundColor: colors.background,
@@ -291,7 +309,7 @@ export default function ChatInfoPage() {
         showsVerticalScrollIndicator={false}
       >
         {/* =========================
-            USER
+            HEADER / PROFILE
         ========================= */}
 
         <Surface
@@ -317,7 +335,7 @@ export default function ChatInfoPage() {
               ]}
             >
               <Ionicons
-                name="person"
+                name={isGroup ? "people" : "person"}
                 size={55}
                 color={colors.onSurfaceVariant}
               />
@@ -361,30 +379,90 @@ export default function ChatInfoPage() {
             </Text>
           )}
 
-          <View style={styles.statusContainer}>
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor: isOnline
-                    ? "#34C759"
-                    : colors.onSurfaceVariant,
-                },
-              ]}
-            />
+          {!isGroup && (
+            <View style={styles.statusContainer}>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor: isOnline
+                      ? "#34C759"
+                      : colors.onSurfaceVariant,
+                  },
+                ]}
+              />
 
+              <Text
+                style={[
+                  styles.statusText,
+                  {
+                    color: colors.onSurfaceVariant,
+                  },
+                ]}
+              >
+                {isOnline ? "Online" : "Offline"}
+              </Text>
+            </View>
+          )}
+        </Surface>
+
+        {/* =========================
+            GROUP MEMBERS SECTION (GROUP ONLY)
+        ========================= */}
+
+        {isGroup && (
+          <>
             <Text
               style={[
-                styles.statusText,
+                styles.sectionTitle,
                 {
                   color: colors.onSurfaceVariant,
                 },
               ]}
             >
-              {isOnline ? "Online" : "Offline"}
+              Group Members
             </Text>
-          </View>
-        </Surface>
+
+            <Surface
+              elevation={1}
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
+              <Pressable
+                style={styles.actionRow}
+                onPress={handleAddMembers}
+              >
+                <Ionicons
+                  name="person-add-outline"
+                  size={24}
+                  color={colors.primary}
+                />
+
+                <Text
+                  style={[
+                    styles.actionText,
+                    {
+                      color: colors.primary,
+                      fontWeight: "600",
+                    },
+                  ]}
+                >
+                  Add Members
+                </Text>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={colors.onSurfaceVariant}
+                />
+              </Pressable>
+            </Surface>
+          </>
+        )}
 
         {/* =========================
             CHAT INFORMATION
@@ -411,7 +489,11 @@ export default function ChatInfoPage() {
           ]}
         >
           <View style={styles.infoRow}>
-            <Ionicons name="people-outline" size={24} color={colors.primary} />
+            <Ionicons
+              name={isGroup ? "people-outline" : "person-outline"}
+              size={24}
+              color={colors.primary}
+            />
 
             <View style={styles.infoContent}>
               <Text
@@ -714,57 +796,77 @@ export default function ChatInfoPage() {
             },
           ]}
         >
-          <Pressable
-            style={styles.actionRow}
-            onPress={() =>
-              Alert.alert(
-                `Block ${displayName}?`,
-                "This will later create a BLOCKED_USER record.",
-                [
+          {isGroup ? (
+            <Pressable
+              style={styles.actionRow}
+              onPress={() =>
+                Alert.alert("Exit Group", "Are you sure you want to exit?", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Exit", style: "destructive", onPress: () => {} },
+                ])
+              }
+            >
+              <Ionicons name="log-out-outline" size={24} color="#D9534F" />
+
+              <Text style={[styles.actionText, styles.dangerText]}>
+                Exit Group
+              </Text>
+            </Pressable>
+          ) : (
+            <>
+              <Pressable
+                style={styles.actionRow}
+                onPress={() =>
+                  Alert.alert(
+                    `Block ${displayName}?`,
+                    "This will later create a BLOCKED_USER record.",
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Block",
+                        style: "destructive",
+                        onPress: () => {},
+                      },
+                    ],
+                  )
+                }
+              >
+                <Ionicons name="ban-outline" size={24} color="#D9534F" />
+
+                <Text style={[styles.actionText, styles.dangerText]}>
+                  Block {displayName}
+                </Text>
+              </Pressable>
+
+              <View
+                style={[
+                  styles.separator,
                   {
-                    text: "Cancel",
-                    style: "cancel",
+                    backgroundColor: colors.outlineVariant,
                   },
-                  {
-                    text: "Block",
-                    style: "destructive",
-                    onPress: () => console.log("Block:", user.userId),
-                  },
-                ],
-              )
-            }
-          >
-            <Ionicons name="ban-outline" size={24} color="#D9534F" />
+                ]}
+              />
 
-            <Text style={[styles.actionText, styles.dangerText]}>
-              Block {displayName}
-            </Text>
-          </Pressable>
+              <Pressable
+                style={styles.actionRow}
+                onPress={() =>
+                  Alert.alert(
+                    "Report User",
+                    "Reporting will be connected to the backend later.",
+                  )
+                }
+              >
+                <Ionicons name="flag-outline" size={24} color="#D9534F" />
 
-          <View
-            style={[
-              styles.separator,
-              {
-                backgroundColor: colors.outlineVariant,
-              },
-            ]}
-          />
-
-          <Pressable
-            style={styles.actionRow}
-            onPress={() =>
-              Alert.alert(
-                "Report User",
-                "Reporting will be connected to the backend later.",
-              )
-            }
-          >
-            <Ionicons name="flag-outline" size={24} color="#D9534F" />
-
-            <Text style={[styles.actionText, styles.dangerText]}>
-              Report User
-            </Text>
-          </Pressable>
+                <Text style={[styles.actionText, styles.dangerText]}>
+                  Report User
+                </Text>
+              </Pressable>
+            </>
+          )}
         </Surface>
 
         <Text

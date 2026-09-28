@@ -640,6 +640,48 @@ export default function ContactsPage() {
         placeholderTextColor={theme.colors.onSurfaceVariant}
       />
 
+      {/*
+       * Create Group Action Row
+       */}
+      <Pressable
+        style={styles.createGroupRow}
+        onPress={() => router.push("/(group)/create")}
+      >
+        <Avatar.Icon
+          size={48}
+          icon="account-group"
+          style={{
+            backgroundColor: theme.colors.primaryContainer,
+          }}
+          color={theme.colors.onPrimaryContainer}
+        />
+
+        <View style={styles.createGroupTextContainer}>
+          <Text
+            variant="titleMedium"
+            style={{
+              fontWeight: "600",
+              color: theme.colors.primary,
+            }}
+          >
+            New Group
+          </Text>
+
+          <Text
+            variant="bodySmall"
+            style={{
+              color: theme.colors.onSurfaceVariant,
+            }}
+          >
+            Create a work or study group
+          </Text>
+        </View>
+
+        <Icon source="chevron-right" size={24} color={theme.colors.primary} />
+      </Pressable>
+
+      <Divider style={{ marginHorizontal: 16 }} />
+
       <View style={styles.countContainer}>
         <Text
           variant="labelLarge"
@@ -754,9 +796,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
+  createGroupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+
+  createGroupTextContainer: {
+    flex: 1,
+    marginLeft: 14,
+  },
+
   countContainer: {
     paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingTop: 12,
     paddingBottom: 4,
   },
 

@@ -21,6 +21,7 @@ import { useChatAttachments } from "../../../hooks/useChatAttachments";
 import { useChatMessages } from "../../../hooks/useChatMessages";
 import { useChatSession } from "../../../hooks/useChatSession";
 import { useKeyboardHeight } from "../../../hooks/useKeyboardHeight";
+import { getSocket } from "../../../services/socket";
 import { createChatStyles } from "../../../styles/chatStyles";
 
 export default function ChatPage() {
@@ -33,6 +34,8 @@ export default function ChatPage() {
   const flatListRef = useRef(null);
   const [chatInfo, setChatInfo] = useState(null);
   const [chatInfoLoading, setChatInfoLoading] = useState(true);
+  const [otherUserOnline, setOtherUserOnline] = useState(false);
+  const [otherUserLastSeen, setOtherUserLastSeen] = useState(null);
   const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
 
   const {
@@ -45,6 +48,7 @@ export default function ChatPage() {
   const {
     messages,
     loading: messagesLoading,
+    setMessages,
     error,
     setError,
     sendMessage,
@@ -58,6 +62,7 @@ export default function ChatPage() {
     text,
     setText,
     fetchMessages,
+    addIncomingMessage,
   } = useChatMessages({
     chatId,
     token,
@@ -77,6 +82,124 @@ export default function ChatPage() {
   useEffect(() => {
     if (!chatId || !token) return;
 
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available");
+      return;
+    }
+
+    socket.emit("join_chat", { chatId });
+
+    console.log("[Chat] Joined chat room:", chatId);
+
+    return () => {
+      socket.emit("leave_chat", { chatId });
+
+      console.log("[Chat] Left chat room:", chatId);
+    };
+  }, [chatId, token]);
+
+  useEffect(() => {
+    if (!chatId || !token) return;
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for messages");
+      return;
+    }
+
+    const handleReceiveMessage = (message) => {
+      console.log("[Chat] Live message received:", message);
+
+      const incomingChatId =
+        message.CHAT_ID ?? message.chat_id ?? message.chatId;
+
+      if (String(incomingChatId) !== String(chatId)) {
+        return;
+      }
+
+      addIncomingMessage(message);
+
+      const messageId = message.MESSAGE_ID ?? message.message_id;
+
+      const senderId = message.SENDER_ID ?? message.sender_id;
+
+      // Only mark messages from OTHER users as seen.
+      if (messageId && senderId && String(senderId) !== String(currentUserId)) {
+        markMessageAsSeen({
+          message_id: messageId,
+          sender_id: senderId,
+        });
+      }
+    };
+
+    socket.on("receive_message", handleReceiveMessage);
+
+    return () => {
+      socket.off("receive_message", handleReceiveMessage);
+    };
+  }, [chatId, token, addIncomingMessage]);
+
+  useEffect(() => {
+    if (!chatId || !token) return;
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for message status");
+      return;
+    }
+
+    const handleMessageStatus = (statusUpdate) => {
+      console.log("[Chat] Message status update:", statusUpdate);
+
+      const incomingChatId =
+        statusUpdate.chatId ?? statusUpdate.CHAT_ID ?? statusUpdate.chat_id;
+
+      if (incomingChatId && String(incomingChatId) !== String(chatId)) {
+        return;
+      }
+
+      const messageId =
+        statusUpdate.messageId ??
+        statusUpdate.MESSAGE_ID ??
+        statusUpdate.message_id;
+
+      const status =
+        statusUpdate.status ??
+        statusUpdate.STATUS ??
+        statusUpdate.message_status;
+
+      if (!messageId || !status) {
+        return;
+      }
+
+      setMessages((previousMessages) =>
+        previousMessages.map((message) => {
+          if (String(message.message_id) !== String(messageId)) {
+            return message;
+          }
+
+          return {
+            ...message,
+            message_status: String(status).toUpperCase(),
+          };
+        }),
+      );
+    };
+
+    socket.on("message_status", handleMessageStatus);
+
+    return () => {
+      socket.off("message_status", handleMessageStatus);
+    };
+  }, [chatId, token]);
+
+  useEffect(() => {
+    if (!chatId || !token) return;
+
     let cancelled = false;
 
     const loadChatInfo = async () => {
@@ -92,7 +215,6 @@ export default function ChatPage() {
         });
 
         const data = await response.json();
-        console.log("Chat info API response:", data);
 
         if (!response.ok) {
           throw new Error(
@@ -107,6 +229,18 @@ export default function ChatPage() {
 
         if (!cancelled) {
           setChatInfo(selectedChat || null);
+
+          if (selectedChat) {
+            const initialOnline =
+              selectedChat.OTHER_IS_ONLINE === "Y" ||
+              selectedChat.OTHER_IS_ONLINE === true;
+
+            setOtherUserOnline(initialOnline);
+
+            if (initialOnline) {
+              setOtherUserLastSeen(null);
+            }
+          }
         }
       } catch (err) {
         console.error("Failed to load chat header:", err);
@@ -127,25 +261,168 @@ export default function ChatPage() {
     };
   }, [chatId, token]);
 
+  useEffect(() => {
+    if (!chatId || !token || !chatInfo?.OTHER_USER_ID) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Presence] Socket is not available");
+      return;
+    }
+
+    const otherUserId = Number(chatInfo.OTHER_USER_ID);
+
+    console.log("[Presence] Watching user:", otherUserId);
+
+    const formatLastSeen = (lastSeen) => {
+      if (!lastSeen) {
+        return null;
+      }
+
+      const date = new Date(lastSeen);
+
+      if (Number.isNaN(date.getTime())) {
+        return null;
+      }
+
+      const now = new Date();
+
+      const isToday =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+
+      if (isToday) {
+        return `today at ${date.toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`;
+      }
+
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+
+      const isYesterday =
+        date.getFullYear() === yesterday.getFullYear() &&
+        date.getMonth() === yesterday.getMonth() &&
+        date.getDate() === yesterday.getDate();
+
+      if (isYesterday) {
+        return `yesterday at ${date.toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`;
+      }
+
+      return `on ${date.toLocaleDateString([], {
+        day: "numeric",
+        month: "short",
+        year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      })} at ${date.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })}`;
+    };
+
+    const handleUserStatus = (statusUpdate) => {
+      console.log("[Presence] User status update:", statusUpdate);
+
+      const incomingUserId =
+        statusUpdate?.userId ?? statusUpdate?.USER_ID ?? statusUpdate?.user_id;
+
+      if (!incomingUserId) {
+        return;
+      }
+
+      if (String(incomingUserId) !== String(otherUserId)) {
+        return;
+      }
+
+      const status = String(
+        statusUpdate?.status ?? statusUpdate?.STATUS ?? "OFFLINE",
+      ).toUpperCase();
+
+      const online = status === "ONLINE";
+
+      setOtherUserOnline(online);
+
+      if (online) {
+        setOtherUserLastSeen(null);
+      } else {
+        setOtherUserLastSeen(formatLastSeen(statusUpdate?.lastSeen));
+      }
+    };
+
+    socket.on("user_status", handleUserStatus);
+
+    socket.emit("get_user_status", {
+      userId: otherUserId,
+    });
+
+    console.log("[Presence] Requested status for user:", otherUserId);
+
+    return () => {
+      socket.off("user_status", handleUserStatus);
+    };
+  }, [chatId, token, chatInfo?.OTHER_USER_ID]);
+
   const scrollToEnd = (animated = true) => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated });
-    }, 100);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({
+          animated,
+        });
+      });
+    });
   };
 
   const handleSendMessage = async () => {
     const success = await sendMessage();
-    if (success) scrollToEnd();
+
+    if (success) {
+      scrollToEnd();
+    }
   };
 
   const handleSendAttachment = async () => {
     const success = await sendAttachment();
-    if (success) scrollToEnd();
+
+    if (success) {
+      scrollToEnd();
+    }
   };
 
   const handleRetry = () => {
     setError("");
     fetchMessages();
+  };
+
+  const markMessageAsSeen = (message) => {
+    if (!message?.message_id || !chatId || !currentUserId) {
+      return;
+    }
+
+    // Don't mark our own messages as seen
+    if (String(message.sender_id) === String(currentUserId)) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for seen status");
+      return;
+    }
+
+    socket.emit("message_seen", {
+      messageId: message.message_id,
+      chatId: Number(chatId),
+    });
+
+    console.log(`[Chat] Message ${message.message_id} marked as seen`);
   };
 
   const handleMessageLongPress = (message) => {
@@ -162,6 +439,8 @@ export default function ChatPage() {
           <ChatHeader
             chat={chatInfo}
             loading={chatInfoLoading}
+            isOnline={otherUserOnline}
+            lastSeen={otherUserLastSeen}
             styles={styles}
           />
         ),
@@ -237,22 +516,23 @@ export default function ChatPage() {
           ref={flatListRef}
           data={messages}
           keyExtractor={(item, index) => String(item.message_id ?? index)}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <MessageBubble
               message={item}
               currentUserId={currentUserId}
               theme={theme}
               styles={styles}
               onLongPress={handleMessageLongPress}
+              isLastMessage={index === messages.length - 1}
             />
           )}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          onContentSizeChange={() =>
-            flatListRef.current?.scrollToEnd({ animated: false })
-          }
+          onContentSizeChange={() => {
+            scrollToEnd(true);
+          }}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No messages yet. Say hello!</Text>

@@ -1,6 +1,12 @@
-import { Image, ImageBackground, Text, View } from "react-native";
+import { ImageBackground, Text, View } from "react-native";
 
-export default function ChatHeader({ chat, loading, styles }) {
+export default function ChatHeader({
+  chat,
+  loading,
+  styles,
+  isOnline,
+  lastSeen,
+}) {
   if (loading) {
     return <Text style={styles.headerLoading}>Loading...</Text>;
   }
@@ -12,7 +18,6 @@ export default function ChatHeader({ chat, loading, styles }) {
     chat?.TITLE ||
     "Chat";
 
-  const isOnline = chat?.OTHER_IS_ONLINE === "Y";
   const picture = chat?.OTHER_PROFILE_PICTURE;
 
   return (
@@ -35,8 +40,9 @@ export default function ChatHeader({ chat, loading, styles }) {
         <Text numberOfLines={1} style={styles.headerName}>
           {displayName}
         </Text>
+
         <Text style={styles.headerStatus}>
-          {isOnline ? "Online" : "Offline"}
+          {isOnline ? "Online" : lastSeen ? `Last seen ${lastSeen}` : "Offline"}
         </Text>
       </View>
     </View>

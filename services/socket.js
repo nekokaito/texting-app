@@ -6,15 +6,34 @@ const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL;
 let socket = null;
 
 export async function connectSocket() {
-  const token = await getItem("user_session");
+  const sessionString = await getItem("user_session");
+
+  if (!sessionString) {
+    console.log("[Socket] No session found");
+    return null;
+  }
+
+  let session;
+
+  try {
+    session = JSON.parse(sessionString);
+  } catch (error) {
+    console.log("[Socket] Invalid session data");
+    return null;
+  }
+
+  const token = session?.token;
 
   if (!token) {
+    console.log("[Socket] No token found");
     return null;
   }
 
   if (socket?.connected) {
     return socket;
   }
+
+  console.log("[Socket] Connecting...");
 
   socket = io(SOCKET_URL, {
     transports: ["websocket"],

@@ -21,6 +21,7 @@ import {
 import { useTheme } from "react-native-paper";
 
 import { API_URL } from "../../constants/API";
+import { connectSocket } from "../../services/socket";
 import { saveItem } from "../../utils/storage";
 
 const CELL_COUNT = 6;
@@ -131,6 +132,8 @@ export default function OTP() {
       }
 
       await saveSession(data);
+
+      await connectSocket();
 
       router.replace("/chats");
     } catch (error) {

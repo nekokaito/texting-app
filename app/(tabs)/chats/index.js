@@ -63,9 +63,6 @@ export default function ChatIndex() {
 
       const responseText = await response.text();
 
-      console.log("Chats API status:", response.status);
-      console.log("Chats API response:", responseText);
-
       let data = {};
 
       try {

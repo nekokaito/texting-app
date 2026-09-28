@@ -1,14 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, Stack } from "expo-router";
+import { useEffect } from "react";
 import { TouchableOpacity, View, useColorScheme } from "react-native";
 import { MD3DarkTheme, MD3LightTheme, PaperProvider } from "react-native-paper";
 
+import { connectSocket } from "../../../services/socket";
+
 export default function ChatsLayout() {
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
 
+  const isDark = colorScheme === "dark";
   const theme = isDark ? MD3DarkTheme : MD3LightTheme;
   const { colors } = theme;
+
+  useEffect(() => {
+    connectSocket();
+  }, []);
 
   return (
     <PaperProvider theme={theme}>
@@ -19,29 +26,21 @@ export default function ChatsLayout() {
           navigationBarColor: colors.background,
         }}
       >
-        {/* =========================
-          CHAT LIST
-      ========================= */}
-
         <Stack.Screen
           name="index"
           options={{
             title: "Chats",
             headerLargeTitle: true,
             headerTransparent: false,
-
             headerStyle: {
               backgroundColor: colors.background,
             },
-
             headerTintColor: colors.onSurface,
-
             headerLargeTitleStyle: {
               fontSize: 34,
               fontWeight: "700",
               color: colors.onSurface,
             },
-
             headerRight: () => (
               <View
                 style={{
@@ -68,7 +67,6 @@ export default function ChatsLayout() {
                 </Link>
               </View>
             ),
-
             headerSearchBarOptions: {
               placeholder: "Search",
               textColor: colors.onSurface,
@@ -78,10 +76,6 @@ export default function ChatsLayout() {
             },
           }}
         />
-
-        {/* =========================
-          INDIVIDUAL CHAT
-      ========================= */}
 
         <Stack.Screen
           name="[id]"
@@ -94,20 +88,14 @@ export default function ChatsLayout() {
           }}
         />
 
-        {/* =========================
-          CHAT INFO
-      ========================= */}
-
         <Stack.Screen
           name="info/[id]"
           options={{
             title: "Info",
             headerBackTitleVisible: false,
-
             headerStyle: {
               backgroundColor: colors.background,
             },
-
             headerTintColor: colors.onSurface,
           }}
         />

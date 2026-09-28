@@ -148,9 +148,7 @@ export const createChatStyles = (theme) =>
     },
 
     composerContainer: {
-      position: "absolute",
-      left: 0,
-      right: 0,
+      width: "100%",
       backgroundColor: theme.colors.background,
     },
 
@@ -421,5 +419,12 @@ export const createChatStyles = (theme) =>
       marginHorizontal: 10,
       fontSize: 14,
       color: theme.colors.onSurface,
+    },
+    messageStatusText: {
+      color: theme.colors.onSurfaceVariant,
+      fontSize: 11,
+      marginTop: 3,
+      textAlign: "right",
+      opacity: 0.65,
     },
   });

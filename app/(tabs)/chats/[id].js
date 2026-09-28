@@ -1,572 +1,565 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
+  ActivityIndicator,
   FlatList,
   ImageBackground,
-  Keyboard,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { useTheme } from "react-native-paper";
 
-import { Ionicons } from "@expo/vector-icons";
-
-import Colors from "../../../constants/Colors";
-
-import chats from "../../../assets/data/chats.json";
-import messagesData from "../../../assets/data/messages.json";
-
-const CURRENT_USER_ID = 101;
+import AttachmentMenu from "../../../components/chat/AttachmentMenu";
+import ChatComposer from "../../../components/chat/ChatComposer";
+import ChatHeader from "../../../components/chat/ChatHeader";
+import MessageBubble from "../../../components/chat/MessageBubble";
+import { API_URL } from "../../../constants/API";
+import { useChatAttachments } from "../../../hooks/useChatAttachments";
+import { useChatMessages } from "../../../hooks/useChatMessages";
+import { useChatSession } from "../../../hooks/useChatSession";
+import { useKeyboardHeight } from "../../../hooks/useKeyboardHeight";
+import { getSocket } from "../../../services/socket";
+import { createChatStyles } from "../../../styles/chatStyles";
 
 export default function ChatPage() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const [replyMessage, setReplyMessage] = useState(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const theme = useTheme();
+  const styles = useMemo(() => createChatStyles(theme), [theme]);
+  const chatId = Array.isArray(id) ? id[0] : id;
 
   const flatListRef = useRef(null);
+  const [chatInfo, setChatInfo] = useState(null);
+  const [chatInfoLoading, setChatInfoLoading] = useState(true);
+  const [otherUserOnline, setOtherUserOnline] = useState(false);
+  const [otherUserLastSeen, setOtherUserLastSeen] = useState(null);
+  const [attachmentMenuVisible, setAttachmentMenuVisible] = useState(false);
 
-  const currentChat = chats.find((chat) => String(chat.chat_id) === String(id));
+  const {
+    token,
+    currentUserId,
+    loading: sessionLoading,
+    error: sessionError,
+  } = useChatSession();
 
-  const otherUser = currentChat?.members?.find(
-    (member) => member.user_id !== CURRENT_USER_ID,
-  );
+  const {
+    messages,
+    loading: messagesLoading,
+    setMessages,
+    error,
+    setError,
+    sendMessage,
+    sendAttachment,
+    sending,
+    uploading,
+    replyMessage,
+    setReplyMessage,
+    selectedAttachment,
+    setSelectedAttachment,
+    text,
+    setText,
+    fetchMessages,
+    addIncomingMessage,
+  } = useChatMessages({
+    chatId,
+    token,
+    currentUserId,
+  });
 
-  /*
-   * Keyboard
-   */
+  const { keyboardHeight } = useKeyboardHeight();
+
+  const { pickMedia, pickDocument } = useChatAttachments({
+    onAttachmentSelected: setSelectedAttachment,
+    onCloseMenu: () => setAttachmentMenuVisible(false),
+  });
+
+  const loading = sessionLoading || messagesLoading;
+  const displayError = sessionError || error;
+
   useEffect(() => {
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    if (!chatId || !token) return;
 
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const socket = getSocket();
 
-    const showSubscription = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
+    if (!socket) {
+      console.log("[Chat] Socket is not available");
+      return;
+    }
 
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({
-          animated: true,
-        });
-      }, 100);
-    });
+    socket.emit("join_chat", { chatId });
 
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
+    console.log("[Chat] Joined chat room:", chatId);
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
+      socket.emit("leave_chat", { chatId });
 
-  /*
-   * Load messages for current CHAT
-   */
+      console.log("[Chat] Left chat room:", chatId);
+    };
+  }, [chatId, token]);
+
   useEffect(() => {
-    if (!currentChat) {
+    if (!chatId || !token) return;
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for messages");
       return;
     }
 
-    const chatMessages = messagesData
-      .filter(
-        (message) => String(message.chat_id) === String(currentChat.chat_id),
-      )
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const handleReceiveMessage = (message) => {
+      console.log("[Chat] Live message received:", message);
 
-    setMessages(chatMessages);
-  }, [currentChat]);
+      const incomingChatId =
+        message.CHAT_ID ?? message.chat_id ?? message.chatId;
 
-  /*
-   * Send message
-   */
-  const sendMessage = () => {
-    const trimmedText = text.trim();
+      if (String(incomingChatId) !== String(chatId)) {
+        return;
+      }
 
-    if (!trimmedText || !currentChat) {
-      return;
-    }
+      addIncomingMessage(message);
 
-    const newMessage = {
-      message_id: Date.now(),
-      chat_id: currentChat.chat_id,
-      sender_id: CURRENT_USER_ID,
-      content: trimmedText,
-      message_type: "TEXT",
-      created_at: new Date().toISOString(),
+      const messageId = message.MESSAGE_ID ?? message.message_id;
+
+      const senderId = message.SENDER_ID ?? message.sender_id;
+
+      // Only mark messages from OTHER users as seen.
+      if (messageId && senderId && String(senderId) !== String(currentUserId)) {
+        markMessageAsSeen({
+          message_id: messageId,
+          sender_id: senderId,
+        });
+      }
     };
 
-    setMessages((previousMessages) => [...previousMessages, newMessage]);
+    socket.on("receive_message", handleReceiveMessage);
 
-    setText("");
-    setReplyMessage(null);
+    return () => {
+      socket.off("receive_message", handleReceiveMessage);
+    };
+  }, [chatId, token, addIncomingMessage]);
 
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({
-        animated: true,
+  useEffect(() => {
+    if (!chatId || !token) return;
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for message status");
+      return;
+    }
+
+    const handleMessageStatus = (statusUpdate) => {
+      console.log("[Chat] Message status update:", statusUpdate);
+
+      const incomingChatId =
+        statusUpdate.chatId ?? statusUpdate.CHAT_ID ?? statusUpdate.chat_id;
+
+      if (incomingChatId && String(incomingChatId) !== String(chatId)) {
+        return;
+      }
+
+      const messageId =
+        statusUpdate.messageId ??
+        statusUpdate.MESSAGE_ID ??
+        statusUpdate.message_id;
+
+      const status =
+        statusUpdate.status ??
+        statusUpdate.STATUS ??
+        statusUpdate.message_status;
+
+      if (!messageId || !status) {
+        return;
+      }
+
+      setMessages((previousMessages) =>
+        previousMessages.map((message) => {
+          if (String(message.message_id) !== String(messageId)) {
+            return message;
+          }
+
+          return {
+            ...message,
+            message_status: String(status).toUpperCase(),
+          };
+        }),
+      );
+    };
+
+    socket.on("message_status", handleMessageStatus);
+
+    return () => {
+      socket.off("message_status", handleMessageStatus);
+    };
+  }, [chatId, token]);
+
+  useEffect(() => {
+    if (!chatId || !token) return;
+
+    let cancelled = false;
+
+    const loadChatInfo = async () => {
+      try {
+        setChatInfoLoading(true);
+
+        const response = await fetch(`${API_URL}/api/chats`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || data.error || "Failed to load chat details.",
+          );
+        }
+
+        const chats = Array.isArray(data.chats) ? data.chats : [];
+        const selectedChat = chats.find(
+          (item) => String(item.CHAT_ID ?? item.chat_id) === String(chatId),
+        );
+
+        if (!cancelled) {
+          setChatInfo(selectedChat || null);
+
+          if (selectedChat) {
+            const initialOnline =
+              selectedChat.OTHER_IS_ONLINE === "Y" ||
+              selectedChat.OTHER_IS_ONLINE === true;
+
+            setOtherUserOnline(initialOnline);
+
+            if (initialOnline) {
+              setOtherUserLastSeen(null);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load chat header:", err);
+        if (!cancelled) {
+          setChatInfo(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setChatInfoLoading(false);
+        }
+      }
+    };
+
+    loadChatInfo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, token]);
+
+  useEffect(() => {
+    if (!chatId || !token || !chatInfo?.OTHER_USER_ID) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Presence] Socket is not available");
+      return;
+    }
+
+    const otherUserId = Number(chatInfo.OTHER_USER_ID);
+
+    console.log("[Presence] Watching user:", otherUserId);
+
+    const formatLastSeen = (lastSeen) => {
+      if (!lastSeen) {
+        return null;
+      }
+
+      const date = new Date(lastSeen);
+
+      if (Number.isNaN(date.getTime())) {
+        return null;
+      }
+
+      const now = new Date();
+
+      const isToday =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+
+      if (isToday) {
+        return `today at ${date.toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`;
+      }
+
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+
+      const isYesterday =
+        date.getFullYear() === yesterday.getFullYear() &&
+        date.getMonth() === yesterday.getMonth() &&
+        date.getDate() === yesterday.getDate();
+
+      if (isYesterday) {
+        return `yesterday at ${date.toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}`;
+      }
+
+      return `on ${date.toLocaleDateString([], {
+        day: "numeric",
+        month: "short",
+        year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      })} at ${date.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })}`;
+    };
+
+    const handleUserStatus = (statusUpdate) => {
+      console.log("[Presence] User status update:", statusUpdate);
+
+      const incomingUserId =
+        statusUpdate?.userId ?? statusUpdate?.USER_ID ?? statusUpdate?.user_id;
+
+      if (!incomingUserId) {
+        return;
+      }
+
+      if (String(incomingUserId) !== String(otherUserId)) {
+        return;
+      }
+
+      const status = String(
+        statusUpdate?.status ?? statusUpdate?.STATUS ?? "OFFLINE",
+      ).toUpperCase();
+
+      const online = status === "ONLINE";
+
+      setOtherUserOnline(online);
+
+      if (online) {
+        setOtherUserLastSeen(null);
+      } else {
+        setOtherUserLastSeen(formatLastSeen(statusUpdate?.lastSeen));
+      }
+    };
+
+    socket.on("user_status", handleUserStatus);
+
+    socket.emit("get_user_status", {
+      userId: otherUserId,
+    });
+
+    console.log("[Presence] Requested status for user:", otherUserId);
+
+    return () => {
+      socket.off("user_status", handleUserStatus);
+    };
+  }, [chatId, token, chatInfo?.OTHER_USER_ID]);
+
+  const scrollToEnd = (animated = true) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({
+          animated,
+        });
       });
-    }, 100);
+    });
   };
 
-  /*
-   * Long press → reply
-   */
+  const handleSendMessage = async () => {
+    const success = await sendMessage();
+
+    if (success) {
+      scrollToEnd();
+    }
+  };
+
+  const handleSendAttachment = async () => {
+    const success = await sendAttachment();
+
+    if (success) {
+      scrollToEnd();
+    }
+  };
+
+  const handleRetry = () => {
+    setError("");
+    fetchMessages();
+  };
+
+  const markMessageAsSeen = (message) => {
+    if (!message?.message_id || !chatId || !currentUserId) {
+      return;
+    }
+
+    // Don't mark our own messages as seen
+    if (String(message.sender_id) === String(currentUserId)) {
+      return;
+    }
+
+    const socket = getSocket();
+
+    if (!socket) {
+      console.log("[Chat] Socket is not available for seen status");
+      return;
+    }
+
+    socket.emit("message_seen", {
+      messageId: message.message_id,
+      chatId: Number(chatId),
+    });
+
+    console.log(`[Chat] Message ${message.message_id} marked as seen`);
+  };
+
   const handleMessageLongPress = (message) => {
     setReplyMessage(message);
   };
 
-  /*
-   * Clear reply
-   */
-  const clearReply = () => {
-    setReplyMessage(null);
-  };
+  const composerBottom =
+    Platform.OS === "android" ? keyboardHeight + 20 : keyboardHeight;
 
-  /*
-   * Format time
-   */
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const screenHeader = (
+    <Stack.Screen
+      options={{
+        headerTitle: () => (
+          <ChatHeader
+            chat={chatInfo}
+            loading={chatInfoLoading}
+            isOnline={otherUserOnline}
+            lastSeen={otherUserLastSeen}
+            styles={styles}
+          />
+        ),
+        headerRight: () => (
+          <Pressable
+            onPress={() => router.push(`/chats/info/${chatId}`)}
+            style={{ padding: 5 }}
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={30}
+              color={theme.colors.primary}
+            />
+          </Pressable>
+        ),
+      }}
+    />
+  );
 
-  /*
-   * Render message
-   */
-  const renderMessage = ({ item }) => {
-    const isMine = item.sender_id === CURRENT_USER_ID;
-
-    const sender = currentChat?.members?.find(
-      (member) => member.user_id === item.sender_id,
-    );
-
-    return (
-      <Pressable
-        onLongPress={() => handleMessageLongPress(item)}
-        delayLongPress={300}
-        style={[
-          styles.messageRow,
-          isMine ? styles.myMessageRow : styles.otherMessageRow,
-        ]}
-      >
-        <View
-          style={[
-            styles.messageBubble,
-            isMine ? styles.myBubble : styles.otherBubble,
-          ]}
-        >
-          {!isMine && (
-            <Text style={styles.senderName}>
-              {sender?.display_name || "User"}
-            </Text>
-          )}
-
-          <View style={styles.messageContentRow}>
-            <Text
-              style={[
-                styles.messageText,
-                isMine ? styles.myMessageText : styles.otherMessageText,
-              ]}
-            >
-              {item.content}
-            </Text>
-
-            <Text
-              style={[
-                styles.messageTime,
-                isMine ? styles.myMessageTime : styles.otherMessageTime,
-              ]}
-            >
-              {formatTime(item.created_at)}
-            </Text>
-          </View>
-        </View>
-      </Pressable>
-    );
-  };
-
-  if (!currentChat) {
+  if (loading) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Chat not found</Text>
+        {screenHeader}
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.statusText}>Loading messages...</Text>
       </View>
     );
   }
 
-  /*
-   * Extra spacing for Android.
-   *
-   * Your screenshot shows the keyboard
-   * covering the bottom of the composer,
-   * so we add a small safe gap.
-   */
-  const composerBottom =
-    Platform.OS === "android" ? keyboardHeight + 20 : keyboardHeight;
+  if (displayError && messages.length === 0) {
+    return (
+      <View style={styles.errorContainer}>
+        {screenHeader}
+        <Ionicons
+          name="alert-circle-outline"
+          size={38}
+          color={theme.colors.onSurfaceVariant}
+        />
+        <Text style={styles.errorText}>{displayError}</Text>
+        <Pressable style={styles.retryButton} onPress={handleRetry}>
+          <Text style={styles.retryButtonText}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable
-              onPress={() => {
-                router.push(`/chats/info/${id}`);
-              }}
-              style={{ padding: 5 }}
-            >
-              <Ionicons
-                name="information-circle-outline"
-                size={30}
-                color={Colors.primary}
-              />
-            </Pressable>
-          ),
-        }}
-      />
+      {screenHeader}
 
       <ImageBackground
         source={require("../../../assets/images/pattern.png")}
         style={styles.chatBackground}
         imageStyle={styles.backgroundImage}
       >
-        {/* =========================
-            MESSAGE LIST
-        ========================= */}
+        {attachmentMenuVisible && (
+          <AttachmentMenu
+            styles={styles}
+            onMediaPress={pickMedia}
+            onDocumentPress={pickDocument}
+          />
+        )}
+
+        {displayError ? (
+          <Pressable style={styles.inlineError} onPress={handleRetry}>
+            <Text style={styles.inlineErrorText}>
+              {displayError} Tap to retry.
+            </Text>
+          </Pressable>
+        ) : null}
 
         <FlatList
           ref={flatListRef}
           data={messages}
-          keyExtractor={(item) => String(item.message_id)}
-          renderItem={renderMessage}
+          keyExtractor={(item, index) => String(item.message_id ?? index)}
+          renderItem={({ item, index }) => (
+            <MessageBubble
+              message={item}
+              currentUserId={currentUserId}
+              theme={theme}
+              styles={styles}
+              onLongPress={handleMessageLongPress}
+              isLastMessage={index === messages.length - 1}
+            />
+          )}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({
-              animated: false,
-            });
+            scrollToEnd(true);
           }}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No messages yet. Say hello!</Text>
+            </View>
+          }
         />
 
-        {/* =========================
-            COMPOSER
-        ========================= */}
-
-        <View
-          style={[
-            styles.composerContainer,
-            {
-              bottom: composerBottom,
-            },
-          ]}
-        >
-          {/* Reply bar */}
-
-          {replyMessage && (
-            <View style={styles.replyBar}>
-              <View style={styles.replyIndicator} />
-
-              <View style={styles.replyContent}>
-                <Text style={styles.replyTitle}>
-                  {replyMessage.sender_id === CURRENT_USER_ID
-                    ? "You"
-                    : otherUser?.display_name || "User"}
-                </Text>
-
-                <Text numberOfLines={1} style={styles.replyText}>
-                  {replyMessage.content}
-                </Text>
-              </View>
-
-              <Pressable onPress={clearReply} style={styles.closeReplyButton}>
-                <Ionicons name="close-circle" size={27} color={Colors.gray} />
-              </Pressable>
-            </View>
-          )}
-
-          {/* Input */}
-
-          <View style={styles.inputContainer}>
-            <Pressable
-              style={styles.addButton}
-              onPress={() =>
-                Alert.alert(
-                  "Attachments",
-                  "Attachment options will be added later.",
-                )
-              }
-            >
-              <Ionicons name="add" size={27} color={Colors.primary} />
-            </Pressable>
-
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder="Message"
-              placeholderTextColor={Colors.gray}
-              multiline
-              textAlignVertical="center"
-              style={styles.textInput}
-            />
-
-            {text.trim().length === 0 ? (
-              <>
-                <Pressable
-                  style={styles.inputIcon}
-                  onPress={() =>
-                    Alert.alert("Camera", "Camera will be added later.")
-                  }
-                >
-                  <Ionicons
-                    name="camera-outline"
-                    size={27}
-                    color={Colors.primary}
-                  />
-                </Pressable>
-
-                <Pressable
-                  style={styles.inputIcon}
-                  onPress={() =>
-                    Alert.alert("Voice", "Voice recording will be added later.")
-                  }
-                >
-                  <Ionicons
-                    name="mic-outline"
-                    size={27}
-                    color={Colors.primary}
-                  />
-                </Pressable>
-              </>
-            ) : (
-              <Pressable style={styles.sendButton} onPress={sendMessage}>
-                <Ionicons name="send" size={22} color="#fff" />
-              </Pressable>
-            )}
-          </View>
-        </View>
+        <ChatComposer
+          styles={styles}
+          theme={theme}
+          bottom={composerBottom}
+          text={text}
+          setText={setText}
+          replyMessage={replyMessage}
+          currentUserId={currentUserId}
+          onClearReply={() => setReplyMessage(null)}
+          selectedAttachment={selectedAttachment}
+          onRemoveAttachment={() => setSelectedAttachment(null)}
+          attachmentMenuVisible={attachmentMenuVisible}
+          onToggleAttachmentMenu={() =>
+            setAttachmentMenuVisible((previous) => !previous)
+          }
+          onSend={selectedAttachment ? handleSendAttachment : handleSendMessage}
+          sending={sending}
+          uploading={uploading}
+        />
       </ImageBackground>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-
-  chatBackground: {
-    flex: 1,
-  },
-
-  backgroundImage: {
-    opacity: 0.45,
-  },
-
-  messageList: {
-    paddingHorizontal: 10,
-    paddingTop: 12,
-
-    /*
-     * Leave room for the composer.
-     */
-    paddingBottom: 90,
-  },
-
-  messageRow: {
-    width: "100%",
-    marginVertical: 2,
-  },
-
-  myMessageRow: {
-    alignItems: "flex-end",
-  },
-
-  otherMessageRow: {
-    alignItems: "flex-start",
-  },
-
-  messageBubble: {
-    maxWidth: "82%",
-    minWidth: 60,
-    paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 5,
-    borderRadius: 12,
-  },
-
-  myBubble: {
-    backgroundColor: Colors.lightGreen,
-    borderTopRightRadius: 4,
-  },
-
-  otherBubble: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 4,
-  },
-
-  senderName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.primary,
-    marginBottom: 2,
-  },
-
-  messageContentRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-  },
-
-  messageText: {
-    fontSize: 16,
-    lineHeight: 21,
-    flexShrink: 1,
-  },
-
-  myMessageText: {
-    color: "#000",
-  },
-
-  otherMessageText: {
-    color: "#000",
-  },
-
-  messageTime: {
-    fontSize: 11,
-    marginLeft: 8,
-    marginBottom: 1,
-  },
-
-  myMessageTime: {
-    color: "#667",
-  },
-
-  otherMessageTime: {
-    color: Colors.gray,
-  },
-
-  /* =========================
-     COMPOSER
-  ========================= */
-
-  composerContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.background,
-  },
-
-  replyBar: {
-    height: 55,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#E4E9EB",
-    borderTopWidth: 1,
-    borderTopColor: Colors.lightGray,
-  },
-
-  replyIndicator: {
-    width: 5,
-    height: "100%",
-    backgroundColor: Colors.primary,
-  },
-
-  replyContent: {
-    flex: 1,
-    paddingHorizontal: 10,
-  },
-
-  replyTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.primary,
-  },
-
-  replyText: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginTop: 2,
-  },
-
-  closeReplyButton: {
-    paddingHorizontal: 10,
-  },
-
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: Colors.background,
-    borderTopWidth: 1,
-    borderTopColor: Colors.lightGray,
-  },
-
-  addButton: {
-    width: 40,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  inputIcon: {
-    width: 40,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  textInput: {
-    flex: 1,
-    maxHeight: 100,
-    minHeight: 42,
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    paddingHorizontal: 15,
-    paddingTop: 10,
-    paddingBottom: 9,
-    fontSize: 16,
-    color: "#000",
-  },
-
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 5,
-    marginBottom: 2,
-  },
-
-  /* =========================
-     ERROR
-  ========================= */
-
-  errorContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  errorText: {
-    fontSize: 18,
-    color: Colors.gray,
-  },
-});

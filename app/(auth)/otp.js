@@ -1,6 +1,15 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+
 import { useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import {
   CodeField,
@@ -9,12 +18,36 @@ import {
   useClearByFocusCell,
 } from "react-native-confirmation-code-field";
 
+import { useTheme } from "react-native-paper";
+
+import { API_URL } from "../../constants/API";
+import { connectSocket } from "../../services/socket";
+import { saveItem } from "../../utils/storage";
+
 const CELL_COUNT = 6;
+const SESSION_KEY = "user_session";
 
 export default function OTP() {
-  const { phone } = useLocalSearchParams();
+  const {
+    phone,
+    purpose,
+    fullName,
+    username,
+    email,
+    profilePicture,
+    password,
+  } = useLocalSearchParams();
+
+  const router = useRouter();
+  const { colors } = useTheme();
+
+  const cleanPhoneNumber = phone ? phone.replace(/\s/g, "") : "";
+
+  const otpPurpose =
+    purpose === "LOGIN" || purpose === "REGISTRATION" ? purpose : null;
 
   const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const ref = useBlurOnFulfill({
     value: code,
@@ -27,68 +60,186 @@ export default function OTP() {
   });
 
   useEffect(() => {
-    if (code.length === CELL_COUNT) {
+    if (code.length === CELL_COUNT && !loading) {
       verifyCode();
     }
   }, [code]);
 
+  const saveSession = async (data) => {
+    if (!data.token) {
+      throw new Error("Authentication token was not received");
+    }
+
+    const session = {
+      token: data.token,
+      user: data.user || null,
+    };
+
+    await saveItem(SESSION_KEY, JSON.stringify(session));
+  };
+
   const verifyCode = async () => {
+    if (
+      loading ||
+      !cleanPhoneNumber ||
+      !otpPurpose ||
+      code.length !== CELL_COUNT
+    ) {
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      console.log("Phone:", phone);
-      console.log("OTP:", code);
+      let response;
 
-      // TODO:
-      // Connect this to your Node.js backend later.
-      //
-      // Example:
-      // await verifyOTP(phone, code);
+      if (otpPurpose === "REGISTRATION") {
+        response = await fetch(`${API_URL}/api/auth/register`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phoneNumber: cleanPhoneNumber,
+            fullName,
+            username,
+            email,
+            profilePicture: profilePicture || null,
+            password,
+            otp: code,
+          }),
+        });
+      } else {
+        response = await fetch(`${API_URL}/api/auth/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            identifier: cleanPhoneNumber,
+            password,
+            otp: code,
+          }),
+        });
+      }
 
-      Alert.alert("Success", "OTP verified successfully!");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || data.error || "Invalid or expired verification code",
+        );
+      }
+
+      await saveSession(data);
+
+      await connectSocket();
+
+      router.replace("/chats");
     } catch (error) {
-      console.log("Verification error:", error);
+      console.log("OTP verification error:", error);
+
+      setCode("");
 
       Alert.alert(
         "Verification Failed",
-        "The verification code is incorrect or expired.",
+        error.message || "The verification code is incorrect or expired.",
       );
+    } finally {
+      setLoading(false);
     }
   };
 
   const resendCode = async () => {
+    if (loading || !cleanPhoneNumber || !otpPurpose) {
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      console.log("Resending OTP to:", phone);
+      const response = await fetch(`${API_URL}/api/auth/send-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phoneNumber: cleanPhoneNumber,
+          purpose: otpPurpose,
+        }),
+      });
 
-      // TODO:
-      // Connect to your Node.js backend.
-      // await resendOTP(phone);
+      const data = await response.json();
 
-      Alert.alert("Code Sent", "A new verification code has been sent.");
+      if (!response.ok) {
+        throw new Error(data.message || data.error || "Unable to resend OTP");
+      }
+
+      setCode("");
+
+      Alert.alert("Code Sent", "A new verification code has been generated.");
     } catch (error) {
-      console.log("Resend error:", error);
+      console.log("Resend OTP error:", error);
 
-      Alert.alert("Error", "Unable to resend the verification code.");
+      Alert.alert(
+        "Error",
+        error.message || "Unable to resend the verification code.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
-  const router = useRouter();
-
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <Stack.Screen
         options={{
-          title: phone || "Verify Phone",
+          title: "Verify Phone",
+          headerStyle: {
+            backgroundColor: colors.background,
+          },
+          headerTintColor: colors.onSurface,
         }}
       />
 
-      <Text style={styles.title}>Verify your phone number.</Text>
+      <Text
+        style={[
+          styles.title,
+          {
+            color: colors.onSurface,
+          },
+        ]}
+      >
+        Verify your phone number
+      </Text>
 
-      <Text style={styles.legal}>
+      <Text
+        style={[
+          styles.legal,
+          {
+            color: colors.onSurfaceVariant,
+          },
+        ]}
+      >
         We have sent you an SMS with a code to the number above.
       </Text>
 
-      <Text style={styles.legal}>
-        To complete your phone number verification, please enter the 6-digit
-        activation code.
+      <Text
+        style={[
+          styles.legal,
+          {
+            color: colors.onSurfaceVariant,
+          },
+        ]}
+      >
+        Enter the 6-digit verification code to continue.
       </Text>
 
       <CodeField
@@ -100,30 +251,56 @@ export default function OTP() {
         rootStyle={styles.codeFieldRoot}
         keyboardType="number-pad"
         textContentType="oneTimeCode"
+        editable={!loading}
         renderCell={({ index, symbol, isFocused }) => (
           <View
             key={index}
             onLayout={getCellOnLayoutHandler(index)}
-            style={[styles.cellRoot, isFocused && styles.focusCell]}
+            style={[
+              styles.cellRoot,
+              {
+                borderBottomColor: colors.outlineVariant,
+              },
+              isFocused && {
+                borderBottomColor: colors.primary,
+                borderBottomWidth: 2,
+              },
+            ]}
           >
-            <Text style={styles.cellText}>
+            <Text
+              style={[
+                styles.cellText,
+                {
+                  color: colors.onSurface,
+                },
+              ]}
+            >
               {symbol || (isFocused ? <Cursor /> : null)}
             </Text>
           </View>
         )}
       />
 
-      <TouchableOpacity style={styles.resendButton} onPress={resendCode}>
-        <Text style={styles.resendText}>
-          Didn&apos;t receive a verification code? Resend
-        </Text>
-      </TouchableOpacity>
-
       <TouchableOpacity
-        style={styles.chatButton}
-        onPress={() => router.push("/(tabs)/chats")}
+        style={styles.resendButton}
+        onPress={resendCode}
+        disabled={loading}
+        activeOpacity={0.7}
       >
-        <Text style={styles.chatButtonText}>Go to Chats</Text>
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Text
+            style={[
+              styles.resendText,
+              {
+                color: colors.primary,
+              },
+            ]}
+          >
+            Didn&apos;t receive a verification code? Resend
+          </Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -134,7 +311,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#FFFFFF",
     gap: 20,
   },
 
@@ -142,13 +318,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "600",
     marginTop: 50,
-    color: "#000000",
   },
 
   legal: {
     fontSize: 14,
     textAlign: "center",
-    color: "#000000",
     lineHeight: 21,
   },
 
@@ -165,46 +339,23 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: "center",
     alignItems: "center",
-    borderBottomColor: "#CCCCCC",
     borderBottomWidth: 1,
   },
 
   cellText: {
-    color: "#000000",
     fontSize: 32,
     textAlign: "center",
-  },
-
-  focusCell: {
-    paddingBottom: 4,
-    borderBottomColor: "#ca982d",
-    borderBottomWidth: 2,
   },
 
   resendButton: {
     width: "100%",
     alignItems: "center",
     marginTop: 20,
+    minHeight: 24,
   },
 
   resendText: {
-    color: "#dfbf30",
     fontSize: 17,
     textAlign: "center",
-  },
-
-  chatButton: {
-    width: "100%",
-    backgroundColor: "#ca982d",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
-  },
-
-  chatButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "600",
   },
 });

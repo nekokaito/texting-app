@@ -1,20 +1,18 @@
 import { Stack } from "expo-router";
-
-import Colors from "../../../constants/Colors";
-
+import { useTheme } from "react-native-paper";
 export default function ContactsLayout() {
+  const theme = useTheme();
   return (
-    <Stack>
-      <Stack.Screen
-        name="index"
-        options={{
-          title: "Contacts",
-          headerStyle: {
-            backgroundColor: Colors.background,
-          },
-          headerShadowVisible: false,
-        }}
-      />
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: theme.colors.surface },
+        headerTintColor: theme.colors.onSurface,
+        headerShadowVisible: false,
+        headerTitleStyle: { color: theme.colors.onSurface },
+      }}
+    >
+      {" "}
+      <Stack.Screen name="index" options={{ title: "Contacts" }} />{" "}
     </Stack>
   );
 }

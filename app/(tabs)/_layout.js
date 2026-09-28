@@ -1,35 +1,41 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Tabs, usePathname } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-
-import Colors from "../../constants/Colors";
+import { useTheme } from "react-native-paper";
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
+  const pathname = usePathname();
+
+  const hideTabBar = pathname !== "/chats" && pathname.startsWith("/chats/");
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Tabs
         screenOptions={{
           headerStyle: {
-            backgroundColor: Colors.background,
+            backgroundColor: colors.background,
           },
 
           headerShadowVisible: false,
 
-          tabBarStyle: {
-            backgroundColor: Colors.background,
-          },
+          headerTintColor: colors.onSurface,
 
-          tabBarActiveTintColor: Colors.primary,
+          tabBarStyle: hideTabBar
+            ? { display: "none" }
+            : {
+                backgroundColor: colors.background,
+              },
 
-          tabBarInactiveTintColor: Colors.gray,
+          tabBarActiveTintColor: colors.primary,
 
-          tabBarInactiveBackgroundColor: Colors.background,
+          tabBarInactiveTintColor: colors.onSurfaceVariant,
 
-          tabBarActiveBackgroundColor: Colors.background,
+          tabBarInactiveBackgroundColor: colors.background,
+
+          tabBarActiveBackgroundColor: colors.background,
         }}
       >
-        {/* CHAT */}
-
         <Tabs.Screen
           name="chats"
           options={{
@@ -43,8 +49,6 @@ export default function TabsLayout() {
           }}
         />
 
-        {/* CONTACTS */}
-
         <Tabs.Screen
           name="contacts"
           options={{
@@ -57,8 +61,6 @@ export default function TabsLayout() {
             headerShown: false,
           }}
         />
-
-        {/* SETTINGS */}
 
         <Tabs.Screen
           name="settings"

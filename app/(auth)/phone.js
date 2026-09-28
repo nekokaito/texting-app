@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,7 +12,8 @@ import {
   View,
 } from "react-native";
 import MaskInput from "react-native-mask-input";
-import Colors from "../../constants/Colors";
+import { useTheme } from "react-native-paper";
+import { API_URL } from "../../constants/API";
 
 const BD_PHONE = [
   "+",
@@ -32,93 +35,277 @@ const BD_PHONE = [
 
 const PhoneNumberScreen = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const router = useRouter();
+  const { colors } = useTheme();
 
   const isValid = phoneNumber.length >= 15;
 
-  const handleNext = () => {
-    if (!isValid) return;
+  const handleBack = () => {
+    router.replace("/welcome");
+  };
 
-    // Design only for now.
-    // Later we will connect OTP/API here.
-    router.push("/otp");
+  const handleNext = async () => {
+    if (!isValid || loading) return;
+
+    setLoading(true);
+
+    try {
+      const cleanPhoneNumber = phoneNumber.replace(/\s/g, "");
+
+      const checkResponse = await fetch(
+        `${API_URL}/api/auth/check-phone`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phoneNumber: cleanPhoneNumber,
+          }),
+        }
+      );
+
+      const checkData = await checkResponse.json();
+
+      if (!checkResponse.ok) {
+        throw new Error(
+          checkData.message || "Unable to check phone number"
+        );
+      }
+
+      if (checkData.exists === true) {
+        router.push({
+          pathname: "/login/password",
+          params: {
+            phone: cleanPhoneNumber,
+          },
+        });
+
+        return;
+      }
+
+      router.push({
+        pathname: "/register/name",
+        params: {
+          phone: cleanPhoneNumber,
+        },
+      });
+    } catch (error) {
+      console.log("Phone check error:", error);
+
+      Alert.alert(
+        "Unable to continue",
+        error.message || "Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={[
+        styles.screen,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={26} color={Colors.primary} />
+          <TouchableOpacity
+            onPress={handleBack}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={26}
+              color={colors.primary}
+            />
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Enter phone number</Text>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color: colors.onSurface,
+              },
+            ]}
+          >
+            Enter phone number
+          </Text>
 
           <View style={{ width: 26 }} />
         </View>
 
-        {/* Description */}
-        <Text style={styles.description}>
-          Please enter your phone number. We will use it to verify your account.
+        <Text
+          style={[
+            styles.description,
+            {
+              color: colors.onSurfaceVariant,
+            },
+          ]}
+        >
+          Please enter your phone number. We will use it to verify your
+          account.
         </Text>
 
-        {/* Phone Input */}
-        <View style={styles.phoneBox}>
-          <TouchableOpacity style={styles.countryRow}>
-            <Text style={styles.countryName}>Bangladesh.</Text>
+        <View
+          style={[
+            styles.phoneBox,
+            {
+              backgroundColor: colors.surface,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.countryRow}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.countryName,
+                {
+                  color: colors.primary,
+                },
+              ]}
+            >
+              Bangladesh
+            </Text>
 
             <View style={styles.countryRight}>
-              <Text style={styles.countryCode}>+880.</Text>
+              <Text
+                style={[
+                  styles.countryCode,
+                  {
+                    color: colors.onSurfaceVariant,
+                  },
+                ]}
+              >
+                +880
+              </Text>
 
-              <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.onSurfaceVariant}
+              />
             </View>
           </TouchableOpacity>
 
-          <View style={styles.separator} />
+          <View
+            style={[
+              styles.separator,
+              {
+                backgroundColor: colors.outlineVariant,
+              },
+            ]}
+          />
 
           <MaskInput
             value={phoneNumber}
             keyboardType="phone-pad"
             autoFocus
+            editable={!loading}
             placeholder="+880 1XXXXXXXXX"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.onSurfaceVariant}
             onChangeText={(masked) => {
               setPhoneNumber(masked);
             }}
             mask={BD_PHONE}
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                color: colors.onSurface,
+              },
+            ]}
           />
         </View>
 
-        {/* Information */}
-        <Text style={styles.info}>
-          Make sure you enter a phone number that you can receive SMS messages
-          on.
+        <Text
+          style={[
+            styles.info,
+            {
+              color: colors.onSurfaceVariant,
+            },
+          ]}
+        >
+          Make sure you enter a phone number that you can receive SMS
+          messages on.
         </Text>
 
-        {/* Bottom Section */}
         <View style={styles.bottom}>
-          <Text style={styles.legal}>
+          <Text
+            style={[
+              styles.legal,
+              {
+                color: colors.onSurfaceVariant,
+              },
+            ]}
+          >
             By continuing, you agree to our{" "}
-            <Text style={styles.link}>Terms of Service</Text> and{" "}
-            <Text style={styles.link}>Privacy Policy</Text>.
+            <Text
+              style={[
+                styles.link,
+                {
+                  color: colors.primary,
+                },
+              ]}
+            >
+              Terms of Service
+            </Text>{" "}
+            and{" "}
+            <Text
+              style={[
+                styles.link,
+                {
+                  color: colors.primary,
+                },
+              ]}
+            >
+              Privacy Policy
+            </Text>
+            .
           </Text>
 
           <TouchableOpacity
             activeOpacity={0.8}
-            disabled={!isValid}
+            disabled={!isValid || loading}
             onPress={handleNext}
-            style={[styles.button, isValid && styles.buttonEnabled]}
+            style={[
+              styles.button,
+              {
+                backgroundColor:
+                  isValid && !loading
+                    ? colors.primary
+                    : colors.surfaceVariant,
+              },
+            ]}
           >
-            <Text
-              style={[styles.buttonText, isValid && styles.buttonTextEnabled]}
-            >
-              Next.
-            </Text>
+            {loading ? (
+              <ActivityIndicator
+                size="small"
+                color={colors.onPrimary}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.buttonText,
+                  {
+                    color: isValid
+                      ? colors.onPrimary
+                      : colors.onSurfaceVariant,
+                  },
+                ]}
+              >
+                Next
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -129,7 +316,6 @@ const PhoneNumberScreen = () => {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
 
   container: {
@@ -148,14 +334,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#000",
     marginTop: 20,
   },
 
   description: {
     fontSize: 15,
     lineHeight: 22,
-    color: Colors.gray,
     textAlign: "center",
     marginBottom: 25,
     paddingHorizontal: 10,
@@ -163,7 +347,6 @@ const styles = StyleSheet.create({
 
   phoneBox: {
     width: "100%",
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 12,
   },
@@ -178,7 +361,6 @@ const styles = StyleSheet.create({
 
   countryName: {
     fontSize: 17,
-    color: Colors.primary,
     fontWeight: "500",
   },
 
@@ -190,21 +372,18 @@ const styles = StyleSheet.create({
 
   countryCode: {
     fontSize: 15,
-    color: Colors.gray,
   },
 
   separator: {
     height: 1,
     width: "100%",
-    backgroundColor: Colors.gray,
-    opacity: 0.2,
+    opacity: 0.5,
     marginTop: 8,
   },
 
   input: {
     width: "100%",
     fontSize: 17,
-    color: "#000",
     paddingVertical: 12,
     paddingHorizontal: 4,
   },
@@ -212,7 +391,6 @@ const styles = StyleSheet.create({
   info: {
     fontSize: 13,
     lineHeight: 19,
-    color: Colors.gray,
     textAlign: "center",
     marginTop: 15,
     paddingHorizontal: 15,
@@ -226,14 +404,12 @@ const styles = StyleSheet.create({
   legal: {
     fontSize: 12,
     lineHeight: 18,
-    color: Colors.gray,
     textAlign: "center",
     marginBottom: 15,
     paddingHorizontal: 10,
   },
 
   link: {
-    color: Colors.primary,
     fontWeight: "500",
   },
 
@@ -241,24 +417,15 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.lightGray,
     paddingVertical: 12,
     borderRadius: 10,
-  },
-
-  buttonEnabled: {
-    backgroundColor: Colors.primary,
   },
 
   buttonText: {
     fontSize: 20,
     fontWeight: "600",
-    color: Colors.gray,
-  },
-
-  buttonTextEnabled: {
-    color: "#fff",
   },
 });
 
 export default PhoneNumberScreen;
+

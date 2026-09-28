@@ -1,23 +1,32 @@
 import { Stack } from "expo-router";
-
-import Colors from "../../../constants/Colors";
+import { useTheme } from "react-native-paper";
 
 export default function SettingsLayout() {
+  const { colors } = useTheme();
+
   return (
-    <Stack>
+    <Stack
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: colors.background,
+        },
+        headerTintColor: colors.onSurface,
+        headerShadowVisible: false,
+        contentStyle: {
+          backgroundColor: colors.background,
+        },
+      }}
+    >
       <Stack.Screen
         name="index"
         options={{
           title: "Settings",
           headerLargeTitle: true,
-          headerShadowVisible: false,
-
-          headerStyle: {
-            backgroundColor: Colors.background,
-          },
-
           headerSearchBarOptions: {
             placeholder: "Search",
+            barTintColor: colors.surface,
+            tintColor: colors.primary,
+            textColor: colors.onSurface,
           },
         }}
       />

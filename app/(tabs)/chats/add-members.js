@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
     Alert,
     FlatList,
+    Image,
     Pressable,
     StyleSheet,
     Text,
@@ -34,7 +35,7 @@ export default function AddMembersScreen() {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [chatId]);
 
   async function fetchUsers() {
     try {
@@ -50,8 +51,32 @@ export default function AddMembersScreen() {
 
       const session = JSON.parse(storedSession);
       const token = session.token;
+      const currentUserId = session.user?.USER_ID || session.user?.userId;
 
-      // Fetch list of all available users in the app
+      // 1. Fetch existing group members to exclude them
+      let existingMemberIds = new Set();
+      if (chatId) {
+        try {
+          const membersRes = await fetch(`${API_URL}/api/chats/${chatId}/members`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          });
+          const membersData = await membersRes.json();
+          if (membersRes.ok) {
+            const memberList = membersData?.members || membersData || [];
+            memberList.forEach((m) => {
+              const id = m.USER_ID || m.userId || m.id;
+              if (id) existingMemberIds.add(String(id));
+            });
+          }
+        } catch (e) {
+          console.warn("Could not fetch existing group members:", e);
+        }
+      }
+
+      // 2. Fetch all available users
       const response = await fetch(`${API_URL}/api/users`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -65,7 +90,17 @@ export default function AddMembersScreen() {
         throw new Error(data?.error || "Failed to fetch users.");
       }
 
-      setUsers(data?.users || data || []);
+      const rawUsers = data?.users || data || [];
+
+      // Filter out current user & existing group members
+      const availableUsers = rawUsers.filter((u) => {
+        const uId = String(u.USER_ID || u.userId || u.id);
+        const isSelf = currentUserId && String(currentUserId) === uId;
+        const isAlreadyMember = existingMemberIds.has(uId);
+        return !isSelf && !isAlreadyMember;
+      });
+
+      setUsers(availableUsers);
     } catch (err) {
       console.error("Fetch Users Error:", err);
       setError(err.message || "Failed to load users.");
@@ -75,10 +110,11 @@ export default function AddMembersScreen() {
   }
 
   function toggleUserSelection(userId) {
-    if (selectedUserIds.includes(userId)) {
-      setSelectedUserIds(selectedUserIds.filter((id) => id !== userId));
+    const normalizedId = String(userId);
+    if (selectedUserIds.includes(normalizedId)) {
+      setSelectedUserIds(selectedUserIds.filter((id) => id !== normalizedId));
     } else {
-      setSelectedUserIds([...selectedUserIds, userId]);
+      setSelectedUserIds([...selectedUserIds, normalizedId]);
     }
   }
 
@@ -128,9 +164,19 @@ export default function AddMembersScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <>
+        <Stack.Screen
+          options={{
+            title: "Add Members",
+            headerBackTitleVisible: false,
+            headerStyle: { backgroundColor: colors.background },
+            headerTintColor: colors.onBackground,
+          }}
+        />
+        <View style={[styles.center, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </>
     );
   }
 
@@ -148,19 +194,56 @@ export default function AddMembersScreen() {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {error ? (
           <View style={styles.center}>
-            <Text style={{ color: colors.error }}>{error}</Text>
-            <Button mode="contained" onPress={fetchUsers} style={{ marginTop: 12 }}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={48}
+              color={colors.error}
+            />
+            <Text style={[styles.errorText, { color: colors.error }]}>
+              {error}
+            </Text>
+            <Button
+              mode="contained"
+              onPress={fetchUsers}
+              style={{ marginTop: 16 }}
+            >
               Retry
             </Button>
+          </View>
+        ) : users.length === 0 ? (
+          <View style={styles.center}>
+            <Ionicons
+              name="people-outline"
+              size={48}
+              color={colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.emptyText,
+                { color: colors.onSurfaceVariant },
+              ]}
+            >
+              No new members available to add.
+            </Text>
           </View>
         ) : (
           <>
             <FlatList
               data={users}
-              keyExtractor={(item) => String(item.userId || item.id)}
+              keyExtractor={(item) =>
+                String(item.USER_ID || item.userId || item.id)
+              }
               renderItem={({ item }) => {
-                const userId = item.userId || item.id;
+                const userId = String(item.USER_ID || item.userId || item.id);
                 const isSelected = selectedUserIds.includes(userId);
+                const fullName =
+                  item.FULL_NAME ||
+                  item.fullName ||
+                  item.DISPLAY_NAME ||
+                  item.username ||
+                  "User";
+                const username = item.USERNAME || item.username;
+                const profilePic = item.PROFILE_PICTURE || item.profilePicture;
 
                 return (
                   <Pressable
@@ -170,19 +253,43 @@ export default function AddMembersScreen() {
                     ]}
                     onPress={() => toggleUserSelection(userId)}
                   >
-                    <Ionicons
-                      name="person-circle-outline"
-                      size={40}
-                      color={colors.onSurfaceVariant}
-                    />
+                    {profilePic ? (
+                      <Image
+                        source={{ uri: profilePic }}
+                        style={styles.avatarImage}
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.avatarPlaceholder,
+                          { backgroundColor: colors.surfaceVariant },
+                        ]}
+                      >
+                        <Ionicons
+                          name="person"
+                          size={22}
+                          color={colors.onSurfaceVariant}
+                        />
+                      </View>
+                    )}
 
                     <View style={styles.userInfo}>
-                      <Text style={[styles.userName, { color: colors.onSurface }]}>
-                        {item.fullName || item.username || "User"}
+                      <Text
+                        style={[
+                          styles.userName,
+                          { color: colors.onSurface },
+                        ]}
+                      >
+                        {fullName}
                       </Text>
-                      {item.username && (
-                        <Text style={{ color: colors.onSurfaceVariant, fontSize: 13 }}>
-                          @{item.username}
+                      {username && (
+                        <Text
+                          style={{
+                            color: colors.onSurfaceVariant,
+                            fontSize: 13,
+                          }}
+                        >
+                          @{username}
                         </Text>
                       )}
                     </View>
@@ -230,10 +337,20 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 15,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: "center",
+    marginTop: 10,
   },
   listContent: {
-    paddingBottom: 80,
+    paddingBottom: 90,
   },
   userRow: {
     flexDirection: "row",
@@ -241,6 +358,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  avatarImage: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  avatarPlaceholder: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
   },
   userInfo: {
     flex: 1,

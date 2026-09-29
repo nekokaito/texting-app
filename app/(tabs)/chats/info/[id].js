@@ -162,14 +162,10 @@ export default function ChatInfoPage() {
   }
 
   function handleAddMembers() {
-    Alert.alert(
-      "Add Members",
-      "Navigate to member selection screen or open select user modal.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "OK", onPress: () => {} },
-      ]
-    );
+    router.push({
+      pathname: "/chats/add-members",
+      params: { chatId: id },
+    });
   }
 
   if (loading) {

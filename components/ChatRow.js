@@ -10,22 +10,38 @@ import { useTheme } from "react-native-paper";
 export default function ChatRow({ chat }) {
   const { colors } = useTheme();
 
-  // Support the actual backend response and the previous mock structure.
-  const chatId = chat.CHAT_ID ?? chat.chat_id;
+  // Support all variations of chat ID
+  const chatId = chat.chatId ?? chat.CHAT_ID ?? chat.chat_id;
 
+  // Comprehensive fallback sequence to eliminate "Unknown"
   const displayName =
-    chat.DISPLAY_NAME ??
-    chat.OTHER_FULL_NAME ??
-    chat.OTHER_USERNAME ??
-    chat.display_name ??
-    "Unknown";
+    chat.name ||
+    chat.title ||
+    chat.chatName ||
+    chat.CHAT_NAME ||
+    chat.TITLE ||
+    chat.DISPLAY_NAME ||
+    chat.display_name ||
+    chat.OTHER_FULL_NAME ||
+    chat.OTHER_USERNAME ||
+    chat.SAVED_NAME ||
+    chat.savedName ||
+    (chat.CHAT_TYPE === "GROUP" || chat.isGroup ? "Group Chat" : "Unknown");
 
-  const profileImage = chat.OTHER_PROFILE_PICTURE ?? chat.profile_image ?? null;
+  const profileImage =
+    chat.OTHER_PROFILE_PICTURE ??
+    chat.otherUser?.profilePicture ??
+    chat.profile_image ??
+    null;
 
   const lastMessage =
-    chat.LAST_MESSAGE_TEXT ?? chat.last_message?.content ?? "";
+    chat.lastMessage ??
+    chat.LAST_MESSAGE_TEXT ??
+    chat.last_message?.content ??
+    "";
 
   const lastMessageDate =
+    chat.lastMessageTime ??
     chat.LAST_MESSAGE_SENT_AT ??
     chat.last_message?.created_at ??
     chat.CREATED_AT ??

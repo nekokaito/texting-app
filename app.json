@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "texting-app",
+    "name": "Texting",
     "slug": "texting-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,14 +13,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FCD501",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.textingapp"
+      "package": "com.ius.textingapp"
     },
     "web": {
       "output": "static",
@@ -48,6 +48,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "48057f0e-ea68-4591-a5cf-ec54bbcbe9b2"
+      }
     }
   }
 }

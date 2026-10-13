@@ -1,24 +1,27 @@
-import Colors from "../constants/Colors";
-import { Ionicons } from "@expo/vector-icons";
-import React, { Component } from "react";
-import {
-  Alert,
-  Animated,
-  I18nManager,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Component } from "react";
+import { Alert, Animated, I18nManager, StyleSheet, View } from "react-native";
 
-import { RectButton } from "react-native-gesture-handler";
-import Swipeable from "react-native-gesture-handler/Swipeable";
+import { RectButton, Swipeable } from "react-native-gesture-handler";
+import { Icon, Text, withTheme } from "react-native-paper";
 
-export default class AppleStyleSwipeableRow extends Component {
+class AppleStyleSwipeableRow extends Component {
+  swipeableRow = null;
+
+  updateRef = (ref) => {
+    this.swipeableRow = ref;
+  };
+
+  close = () => {
+    this.swipeableRow?.close();
+  };
+
   renderRightAction = (text, color, x, progress) => {
     const trans = progress.interpolate({
       inputRange: [0, 1],
       outputRange: [x, 0],
     });
+
+    const iconName = text === "More" ? "dots-horizontal" : "archive";
 
     const pressHandler = () => {
       this.close();
@@ -27,6 +30,7 @@ export default class AppleStyleSwipeableRow extends Component {
 
     return (
       <Animated.View
+        key={text}
         style={{
           flex: 1,
           transform: [{ translateX: trans }],
@@ -36,40 +40,41 @@ export default class AppleStyleSwipeableRow extends Component {
           style={[styles.rightAction, { backgroundColor: color }]}
           onPress={pressHandler}
         >
-          <Ionicons
-            name={text === "More" ? "ellipsis-horizontal" : "archive"}
-            size={24}
-            color="#fff"
-            style={{ paddingTop: 10 }}
-          />
+          <Icon source={iconName} size={24} color="#FFFFFF" />
 
-          <Text style={styles.actionText}>{text}</Text>
+          <Text variant="labelLarge" style={styles.actionText}>
+            {text}
+          </Text>
         </RectButton>
       </Animated.View>
     );
   };
 
-  renderRightActions = (progress) => (
-    <View
-      style={{
-        width: 192,
-        flexDirection: I18nManager.isRTL ? "row-reverse" : "row",
-      }}
-    >
-      {this.renderRightAction("More", "#C8C7CD", 192, progress)}
+  renderRightActions = (progress) => {
+    const { theme } = this.props;
 
-      {this.renderRightAction("Archive", Colors.muted, 128, progress)}
-    </View>
-  );
+    return (
+      <View
+        style={{
+          width: 192,
+          flexDirection: I18nManager.isRTL ? "row-reverse" : "row",
+        }}
+      >
+        {this.renderRightAction(
+          "More",
+          theme.colors.surfaceVariant,
+          192,
+          progress,
+        )}
 
-  swipeableRow = null;
-
-  updateRef = (ref) => {
-    this.swipeableRow = ref;
-  };
-
-  close = () => {
-    this.swipeableRow?.close();
+        {this.renderRightAction(
+          "Archive",
+          theme.colors.secondary,
+          128,
+          progress,
+        )}
+      </View>
+    );
   };
 
   render() {
@@ -83,10 +88,10 @@ export default class AppleStyleSwipeableRow extends Component {
         rightThreshold={40}
         renderRightActions={this.renderRightActions}
         onSwipeableOpen={(direction) => {
-          console.log(`Opening swipeable from the ${direction}`);
+          console.log(`Opening swipeable from ${direction}`);
         }}
         onSwipeableClose={(direction) => {
-          console.log(`Closing swipeable to the ${direction}`);
+          console.log(`Closing swipeable from ${direction}`);
         }}
       >
         {children}
@@ -96,16 +101,15 @@ export default class AppleStyleSwipeableRow extends Component {
 }
 
 const styles = StyleSheet.create({
-  actionText: {
-    color: "white",
-    fontSize: 16,
-    backgroundColor: "transparent",
-    padding: 10,
-  },
-
   rightAction: {
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
   },
+  actionText: {
+    color: "#FFFFFF",
+    marginTop: 4,
+  },
 });
+
+export default withTheme(AppleStyleSwipeableRow);
